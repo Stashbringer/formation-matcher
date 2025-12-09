@@ -309,8 +309,16 @@
           <input id="playerName" placeholder="E.g Noname" />
         </div>
         <div>
-          <label>Formation</label>
-          <input id="formationName" placeholder="Formation 1/2/3" />
+          <label>Formation (1–4)</label>
+          <input
+            id="formationName"
+            type="number"
+            min="1"
+            max="4"
+            step="1"
+            inputmode="numeric"
+            placeholder="Formation 1/2/3"
+          />
         </div>
         <div>
           <label>Power</label>
@@ -428,7 +436,7 @@
         adminLogoutBtn.style.display = "inline-block";
       } else if (user) {
         isAdmin = false;
-        adminStatusText.textContent = "Logged in (not admin): " + (user.email || "unknown");
+        adminStatusText.textContent = "Logged in (not admin): " + (user.email || "unknown") + "";
         adminLoginBtn.style.display = "none";
         adminLogoutBtn.style.display = "inline-block";
       } else {
@@ -575,13 +583,27 @@
       return;
     }
     const player = playerInput.value.trim();
-    const form = formationInput.value.trim();
+    const formRaw = formationInput.value.trim();
     const powerVal = powerInput.value.trim();
 
-    if (!player || !form || !powerVal) return alert("Fill all fields correctly.");
+    if (!player || !formRaw || !powerVal) {
+      alert("Fill all fields correctly.");
+      return;
+    }
+
+    // Kun 1–4 tillatt
+    if (!/^[1-4]$/.test(formRaw)) {
+      alert("Formation must be a number between 1 and 4.");
+      return;
+    }
 
     const power = Number(powerVal);
-    if (isNaN(power)) return alert("Power must be a number.");
+    if (isNaN(power)) {
+      alert("Power must be a number.");
+      return;
+    }
+
+    const form = formRaw; // lagres som string "1"–"4"
 
     try {
       await formationsRef.add({ player, formation: form, power });
@@ -814,8 +836,6 @@
 
 </body>
 </html>
-
-
 
 
 
