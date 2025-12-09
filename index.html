@@ -591,7 +591,7 @@
     });
   }
 
-  // ---------- Add formation ----------
+  // ---------- Add / update formation ----------
   document.getElementById("addFormationBtn").onclick = async () => {
     if (!formationsRef) {
       alert("Database not connected.");
@@ -618,16 +618,28 @@
       return;
     }
 
-    const form = formRaw; // store as "1"–"4"
+    const form = formRaw; // "1"–"4"
 
     try {
-      await formationsRef.add({ player, formation: form, power });
+      // Update if same player + formation exists (case-insensitive on name)
+      const existing = formations.find(
+        f =>
+          f.formation === form &&
+          String(f.player).toLowerCase() === player.toLowerCase()
+      );
+
+      if (existing) {
+        await formationsRef.doc(existing.id).update({ power });
+      } else {
+        await formationsRef.add({ player, formation: form, power });
+      }
+
       playerInput.value = "";
       formationInput.value = "";
       powerInput.value = "";
     } catch (e) {
-      console.error("Add error:", e);
-      alert("Failed to add formation: " + e.message);
+      console.error("Add/update error:", e);
+      alert("Failed to save formation: " + e.message);
     }
   };
 
@@ -854,6 +866,7 @@
 
 </body>
 </html>
+
 
 
 
