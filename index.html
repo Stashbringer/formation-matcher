@@ -170,30 +170,67 @@
       background: rgba(15,23,42,0.7);
     }
 
-    /* Pairing */
+    /* Pairing – kompakte grønne bokser */
     .pairs {
-      display: grid;
-      gap: 0.75rem;
-    }
-
-    @media (min-width: 700px) {
-      .pairs {
-        grid-template-columns: repeat(2, 1fr);
-      }
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
     .pair-card {
-      border-radius: 0.9rem;
-      padding: 0.8rem;
-      border: 1px solid rgba(34,197,94,0.35);
-      background: radial-gradient(circle at top left, rgba(34,197,94,0.18), rgba(15,23,42,0.95));
+      display: inline-flex;
+      flex-direction: column;
+      padding: 0.45rem 0.65rem;
+      border-radius: 0.6rem;
+      border: 1px solid rgba(34,197,94,0.7);
+      background: radial-gradient(circle at top left, rgba(34,197,94,0.16), rgba(15,23,42,0.98));
+      font-size: 0.78rem;
+      max-width: 360px;
     }
 
-    .chip {
-      padding: 0.15rem 0.45rem;
-      border-radius: 999px;
-      border: 1px solid rgba(148,163,184,0.6);
+    .pair-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.4rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .pair-title {
+      font-weight: 600;
+      color: #e5e7eb;
+      white-space: nowrap;
+    }
+
+    .pair-meta {
       font-size: 0.7rem;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    .pair-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      align-items: baseline;
+      line-height: 1.3;
+    }
+
+    .pair-name {
+      font-weight: 600;
+      color: #f9fafb;
+    }
+
+    .pair-sep {
+      color: #9ca3af;
+    }
+
+    .pair-form {
+      color: #a5b4fc;
+    }
+
+    .pair-power {
+      color: #facc15;
     }
 
     .status-bar {
@@ -223,6 +260,18 @@
       padding: 0.25rem 0.7rem;
       font-size: 0.75rem;
     }
+
+    .pair-search {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .pair-search input {
+      width: 180px;
+      font-size: 0.78rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 999px;
+    }
   </style>
 </head>
 
@@ -246,7 +295,6 @@
         Admin status:
         <span id="adminStatusText">Not logged in</span>
       </span>
-      <!-- Login-knapp skjult til admin-kode brukes -->
       <button class="btn-secondary btn-xs" id="adminLoginBtn" style="display:none;">Admin login (Google)</button>
       <button class="btn-secondary btn-xs" id="adminLogoutBtn" style="display:none;">Logout</button>
     </div>
@@ -302,7 +350,12 @@
 
     <!-- Pair results -->
     <div class="card">
-      <div class="card-header"><strong>Pairing Results</strong></div>
+      <div class="card-header">
+        <strong>Pairing Results</strong>
+        <div class="pair-search">
+          <input id="pairSearch" placeholder="Search player in pairs..." />
+        </div>
+      </div>
       <div id="pairsContainer" class="muted">No pairs yet.</div>
     </div>
 
@@ -313,6 +366,7 @@
   const adminStatusText = document.getElementById("adminStatusText");
   const adminLoginBtn = document.getElementById("adminLoginBtn");
   const adminLogoutBtn = document.getElementById("adminLogoutBtn");
+  const pairSearchInput = document.getElementById("pairSearch");
 
   // ---------- Firebase config ----------
   const firebaseConfig = {
@@ -329,6 +383,7 @@
   const formations = [];
   let pairsFromDb = [];
   let isAdmin = false;
+  let currentPairsResult = null; // full set of pairs + leftover
 
   const ADMIN_UID = "I51aLQJZMjO960ykC2AUlNOVbIE3";
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
@@ -374,18 +429,16 @@
       } else if (user) {
         isAdmin = false;
         adminStatusText.textContent = "Logged in (not admin): " + (user.email || "unknown");
-        // Ikke vis login-knapp selv om de er innlogget
         adminLoginBtn.style.display = "none";
         adminLogoutBtn.style.display = "inline-block";
       } else {
         isAdmin = false;
         adminStatusText.textContent = "Not logged in";
         adminLogoutBtn.style.display = "none";
-        // Login-knappen vises bare hvis du har låst den opp med admin-kode
       }
       renderList();
-      if (pairsFromDb.length > 0) {
-        renderPairs(buildPairsResultFromDb());
+      if (currentPairsResult) {
+        renderPairsFiltered();
       }
     });
 
@@ -419,7 +472,7 @@
         });
         renderList();
         if (pairsFromDb.length > 0) {
-          renderPairs(buildPairsResultFromDb());
+          setPairsResult(buildPairsResultFromDb());
         }
       },
       err => {
@@ -455,12 +508,13 @@
         });
 
         if (pairsFromDb.length === 0) {
+          currentPairsResult = null;
           pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
           return;
         }
 
         const result = buildPairsResultFromDb();
-        renderPairs(result);
+        setPairsResult(result);
         statusEl.textContent = "Pairs loaded from database.";
         setTimeout(() => {
           statusEl.textContent = "Connected to database.";
@@ -482,6 +536,36 @@
 
     const leftover = formations.filter(f => !usedIds.has(f.id));
     return { pairs: pairsFromDb, leftover };
+  }
+
+  // ---------- Manage current pairs result + filtering ----------
+  function setPairsResult(result) {
+    currentPairsResult = result;
+    renderPairsFiltered();
+  }
+
+  function renderPairsFiltered() {
+    if (!currentPairsResult) {
+      pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
+      return;
+    }
+    const term = pairSearchInput ? pairSearchInput.value.trim().toLowerCase() : "";
+    if (!term) {
+      renderPairs(currentPairsResult);
+      return;
+    }
+    const filteredPairs = currentPairsResult.pairs.filter(p =>
+      (p.a.player || "").toLowerCase().includes(term) ||
+      (p.b.player || "").toLowerCase().includes(term)
+    );
+    const filteredResult = { pairs: filteredPairs, leftover: [] };
+    renderPairs(filteredResult);
+  }
+
+  if (pairSearchInput) {
+    pairSearchInput.addEventListener("input", () => {
+      renderPairsFiltered();
+    });
   }
 
   // ---------- Add formation ----------
@@ -546,7 +630,7 @@
       return;
     }
     const result = generatePairs();
-    renderPairs(result);
+    setPairsResult(result);
 
     if (isAdmin) {
       await savePairsToDb(result);
@@ -591,7 +675,7 @@
     }
 
     countInfo.textContent = `(${formations.length})`;
-    if (!formations.length && pairsFromDb.length === 0) {
+    if (!formations.length && !currentPairsResult) {
       pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
     }
   }
@@ -675,7 +759,7 @@
     }
   }
 
-  // ---------- Render pairs ----------
+  // ---------- Render pairs (kompakte kort) ----------
   function renderPairs({ pairs, leftover }) {
     if (!pairs || pairs.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No valid pairs.</span>";
@@ -689,16 +773,29 @@
       const card = document.createElement("div");
       card.className = "pair-card";
       card.innerHTML = `
-        <strong>Pair ${i + 1}</strong> — Total: ${p.total} | Diff: ${p.diff}<br><br>
-        <span class="chip">${escapeHtml(p.a.player)}</span> — ${escapeHtml(p.a.formation)} (${p.a.power})<br>
-        <span class="chip">${escapeHtml(p.b.player)}</span> — ${escapeHtml(p.b.formation)} (${p.b.power})
+        <div class="pair-header">
+          <span class="pair-title">Pair ${i + 1}</span>
+          <span class="pair-meta">Total: ${p.total} | Diff: ${p.diff}</span>
+        </div>
+        <div class="pair-row">
+          <span class="pair-name">${escapeHtml(p.a.player)}</span>
+          <span class="pair-sep">—</span>
+          <span class="pair-form">${escapeHtml(p.a.formation)}</span>
+          <span class="pair-power">(${p.a.power})</span>
+        </div>
+        <div class="pair-row">
+          <span class="pair-name">${escapeHtml(p.b.player)}</span>
+          <span class="pair-sep">—</span>
+          <span class="pair-form">${escapeHtml(p.b.formation)}</span>
+          <span class="pair-power">(${p.b.power})</span>
+        </div>
       `;
       wrap.appendChild(card);
     });
 
     if (leftover && leftover.length > 0) {
       const miss = document.createElement("div");
-      miss.style.marginTop = "1rem";
+      miss.style.marginTop = "0.75rem";
       miss.innerHTML = "<strong>Unpaired:</strong><br>" +
         leftover.map(f => `${escapeHtml(f.player)} — ${escapeHtml(f.formation)} (${f.power})`).join("<br>");
       wrap.appendChild(miss);
@@ -717,6 +814,7 @@
 
 </body>
 </html>
+
 
 
 
