@@ -290,6 +290,7 @@
 
   let db, formationsRef, pairsRef;
   const formations = [];
+  let pairsFromDb = []; // sist lagrede par
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
 
   const playerInput = document.getElementById("playerName");
@@ -310,7 +311,7 @@
     statusEl.textContent = "Error: could not connect to database.";
   }
 
-  // ---------- Live formations fra Firestore ----------
+  // ---------- Live formations ----------
   if (formationsRef) {
     formationsRef.orderBy("power").onSnapshot(
       snapshot => {
@@ -319,12 +320,71 @@
           formations.push({ id: doc.id, ...doc.data() });
         });
         renderList();
+        // Når formations oppdateres, og vi har lagrede par, re-render vi parene med riktig leftover
+        if (pairsFromDb.length > 0) {
+          renderPairs(buildPairsResultFromDb());
+        }
       },
       err => {
-        console.error("onSnapshot error:", err);
-        statusEl.textContent = "Database error: " + err.message;
+        console.error("onSnapshot formations error:", err);
+        statusEl.textContent = "Database error (formations): " + err.message;
       }
     );
+  }
+
+  // ---------- Live pairs ----------
+  if (pairsRef) {
+    pairsRef.orderBy("index").onSnapshot(
+      snapshot => {
+        pairsFromDb = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          pairsFromDb.push({
+            a: {
+              id: d.aId,
+              player: d.aPlayer,
+              formation: d.aFormation,
+              power: d.aPower
+            },
+            b: {
+              id: d.bId,
+              player: d.bPlayer,
+              formation: d.bFormation,
+              power: d.bPower
+            },
+            diff: d.diff
+          });
+        });
+
+        if (pairsFromDb.length === 0) {
+          pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
+          return;
+        }
+
+        const result = buildPairsResultFromDb();
+        renderPairs(result);
+        statusEl.textContent = "Pairs loaded from database.";
+        setTimeout(() => {
+          statusEl.textContent = "Connected to database.";
+        }, 3000);
+      },
+      err => {
+        console.error("onSnapshot pairs error:", err);
+        statusEl.textContent = "Database error (pairs): " + err.message;
+      }
+    );
+  }
+
+  // ---------- Bygg result-objekt fra par i DB + lokale formations ----------
+  function buildPairsResultFromDb() {
+    const usedIds = new Set();
+    pairsFromDb.forEach(p => {
+      if (p.a && p.a.id) usedIds.add(p.a.id);
+      if (p.b && p.b.id) usedIds.add(p.b.id);
+    });
+
+    const leftover = formations.filter(f => !usedIds.has(f.id));
+    return { pairs: pairsFromDb, leftover };
   }
 
   // ---------- Add formation ----------
@@ -364,13 +424,11 @@
     if (!confirm("Delete EVERYTHING from formations AND pairs?")) return;
 
     try {
-      // Slett formations
       const snapF = await formationsRef.get();
-      const batch = db.batch();
-      snapF.forEach(doc => batch.delete(doc.ref));
-
-      // Slett pairs
       const snapP = await pairsRef.get();
+      const batch = db.batch();
+
+      snapF.forEach(doc => batch.delete(doc.ref));
       snapP.forEach(doc => batch.delete(doc.ref));
 
       await batch.commit();
@@ -418,7 +476,7 @@
     });
 
     countInfo.textContent = `(${formations.length})`;
-    if (!formations.length) {
+    if (!formations.length && pairsFromDb.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
     }
   }
@@ -465,12 +523,10 @@
   async function savePairsToDb({ pairs }) {
     if (!pairsRef) return;
     try {
-      // Slett tidligere par
       const snap = await pairsRef.get();
       const batch = db.batch();
       snap.forEach(doc => batch.delete(doc.ref));
 
-      // Legg til nye par
       pairs.forEach((p, index) => {
         const ref = pairsRef.doc();
         batch.set(ref, {
@@ -501,7 +557,7 @@
 
   // ---------- Render pairs ----------
   function renderPairs({ pairs, leftover }) {
-    if (pairs.length === 0) {
+    if (!pairs || pairs.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No valid pairs.</span>";
       return;
     }
@@ -520,7 +576,7 @@
       wrap.appendChild(card);
     });
 
-    if (leftover.length > 0) {
+    if (leftover && leftover.length > 0) {
       const miss = document.createElement("div");
       miss.style.marginTop = "1rem";
       miss.innerHTML = "<strong>Unpaired:</strong><br>" +
@@ -541,5 +597,7 @@
 
 </body>
 </html>
+
+
 
 
