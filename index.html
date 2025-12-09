@@ -5,9 +5,9 @@
   <title>Formation Matcher – Lost Souls</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase SDKs (COMPAT) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -41,7 +41,7 @@
       flex-direction: column;
       align-items: center;
       gap: 0.25rem;
-      text-shadow: 
+      text-shadow:
         0 0 8px rgba(255, 0, 122, 0.6),
         0 0 14px rgba(255, 0, 122, 0.4);
       animation: ls-pulse 2.8s infinite ease-in-out;
@@ -193,6 +193,13 @@
       border: 1px solid rgba(148,163,184,0.6);
       font-size: 0.7rem;
     }
+
+    .status-bar {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
   </style>
 </head>
 
@@ -208,6 +215,7 @@
     </div>
 
     <p class="subtitle">Submit formations and generate optimal reinforcement pairs.</p>
+    <div id="status" class="status-bar">Connecting to database…</div>
 
     <!-- Input -->
     <div class="card">
@@ -267,7 +275,9 @@
   </div>
 
 <script>
-  // ---------- Firebase config (DIN KONFIG) ----------
+  const statusEl = document.getElementById("status");
+
+  // ---------- Firebase config ----------
   const firebaseConfig = {
     apiKey: "AIzaSyDjK7eKaCvB0Yz3ITqvfhxS7EeCdR0_Ejk",
     authDomain: "tides-matcher.firebaseapp.com",
@@ -278,13 +288,8 @@
     measurementId: "G-MBN8G0FSFJ"
   };
 
-  // ---------- Init Firebase + Firestore ----------
-  firebase.initializeApp(firebaseConfig);
-  const db = firebase.firestore();
-  const formationsRef = db.collection("formations"); // kolleksjon i Firestore
-
-  const formations = []; // lokal cache
-
+  let db, formationsRef, pairsRef;
+  const formations = [];
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
 
   const playerInput = document.getElementById("playerName");
@@ -294,68 +299,100 @@
   const pairsContainer = document.getElementById("pairsContainer");
   const countInfo = document.getElementById("countInfo");
 
-  // ---------- Live oppdateringer fra Firestore ----------
-  formationsRef.orderBy("power").onSnapshot(snapshot => {
-    formations.length = 0;
-    snapshot.forEach(doc => {
-      formations.push({
-        id: doc.id,
-        ...doc.data()
-      });
-    });
-    render();
-  });
+  try {
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    formationsRef = db.collection("formations");
+    pairsRef = db.collection("pairs");
+    statusEl.textContent = "Connected to database.";
+  } catch (e) {
+    console.error("Firebase init error:", e);
+    statusEl.textContent = "Error: could not connect to database.";
+  }
 
-  // ---------- Legg til formasjon (lagres i Firestore) ----------
+  // ---------- Live formations fra Firestore ----------
+  if (formationsRef) {
+    formationsRef.orderBy("power").onSnapshot(
+      snapshot => {
+        formations.length = 0;
+        snapshot.forEach(doc => {
+          formations.push({ id: doc.id, ...doc.data() });
+        });
+        renderList();
+      },
+      err => {
+        console.error("onSnapshot error:", err);
+        statusEl.textContent = "Database error: " + err.message;
+      }
+    );
+  }
+
+  // ---------- Add formation ----------
   document.getElementById("addFormationBtn").onclick = async () => {
+    if (!formationsRef) {
+      alert("Database not connected.");
+      return;
+    }
     const player = playerInput.value.trim();
     const form = formationInput.value.trim();
     const powerVal = powerInput.value.trim();
 
-    if (!player || !form || !powerVal) {
-      alert("Fill all fields correctly.");
-      return;
-    }
+    if (!player || !form || !powerVal) return alert("Fill all fields correctly.");
 
     const power = Number(powerVal);
-    if (isNaN(power)) {
-      alert("Power must be a number.");
-      return;
+    if (isNaN(power)) return alert("Power must be a number.");
+
+    try {
+      await formationsRef.add({ player, formation: form, power });
+      playerInput.value = "";
+      formationInput.value = "";
+      powerInput.value = "";
+    } catch (e) {
+      console.error("Add error:", e);
+      alert("Failed to add formation: " + e.message);
     }
-
-    await formationsRef.add({ player, formation: form, power });
-
-    playerInput.value = "";
-    formationInput.value = "";
-    powerInput.value = "";
   };
 
-  // ---------- Clear all (tømmer Firestore) ----------
+  // ---------- Clear all ----------
   document.getElementById("clearAllBtn").onclick = async () => {
-    const given = prompt("Admin code:");
-    if (given !== ADMIN_CODE) {
-      alert("Incorrect code.");
+    if (!formationsRef || !pairsRef) {
+      alert("Database not connected.");
       return;
     }
-    if (!confirm("Delete EVERYTHING from the shared list?")) return;
+    const given = prompt("Admin code:");
+    if (given !== ADMIN_CODE) return alert("Incorrect code.");
+    if (!confirm("Delete EVERYTHING from formations AND pairs?")) return;
 
-    const snap = await formationsRef.get();
-    const batch = db.batch();
-    snap.forEach(doc => batch.delete(doc.ref));
-    await batch.commit();
+    try {
+      // Slett formations
+      const snapF = await formationsRef.get();
+      const batch = db.batch();
+      snapF.forEach(doc => batch.delete(doc.ref));
+
+      // Slett pairs
+      const snapP = await pairsRef.get();
+      snapP.forEach(doc => batch.delete(doc.ref));
+
+      await batch.commit();
+    } catch (e) {
+      console.error("Clear all error:", e);
+      alert("Failed to clear list: " + e.message);
+    }
   };
 
-  // ---------- Generer par basert på Firestore-data ----------
-  document.getElementById("makePairsBtn").onclick = () => {
+  // ---------- Generate & save pairs ----------
+  document.getElementById("makePairsBtn").onclick = async () => {
     if (formations.length < 2) {
       alert("Need at least 2 formations.");
       return;
     }
-    renderPairs(generatePairs());
+    const result = generatePairs();
+    renderPairs(result);
+    await savePairsToDb(result);
   };
 
-  // ---------- Render liste ----------
-  function render() {
+  // ---------- Render formations-liste ----------
+  function renderList() {
     formationsBody.innerHTML = "";
     formations.forEach((f, i) => {
       const tr = document.createElement("tr");
@@ -371,15 +408,22 @@
     document.querySelectorAll("[data-id]").forEach(btn => {
       btn.onclick = async () => {
         const id = btn.getAttribute("data-id");
-        await formationsRef.doc(id).delete();
+        try {
+          await formationsRef.doc(id).delete();
+        } catch (e) {
+          console.error("Delete error:", e);
+          alert("Failed to delete: " + e.message);
+        }
       };
     });
 
     countInfo.textContent = `(${formations.length})`;
-    pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
+    if (!formations.length) {
+      pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
+    }
   }
 
-  // ---------- Matching-logikk (ikke samme spiller mot seg selv) ----------
+  // ---------- Pairing-logikk ----------
   function generatePairs() {
     const list = [...formations].sort((a, b) => a.power - b.power);
     const used = new Set();
@@ -417,7 +461,45 @@
     return { pairs, leftover };
   }
 
-  // ---------- Render par ----------
+  // ---------- Lagre genererte par i Firestore ----------
+  async function savePairsToDb({ pairs }) {
+    if (!pairsRef) return;
+    try {
+      // Slett tidligere par
+      const snap = await pairsRef.get();
+      const batch = db.batch();
+      snap.forEach(doc => batch.delete(doc.ref));
+
+      // Legg til nye par
+      pairs.forEach((p, index) => {
+        const ref = pairsRef.doc();
+        batch.set(ref, {
+          index,
+          aId: p.a.id,
+          aPlayer: p.a.player,
+          aFormation: p.a.formation,
+          aPower: p.a.power,
+          bId: p.b.id,
+          bPlayer: p.b.player,
+          bFormation: p.b.formation,
+          bPower: p.b.power,
+          diff: p.diff,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+
+      await batch.commit();
+      statusEl.textContent = "Pairs saved to database.";
+      setTimeout(() => {
+        statusEl.textContent = "Connected to database.";
+      }, 3000);
+    } catch (e) {
+      console.error("Save pairs error:", e);
+      alert("Failed to save pairs: " + e.message);
+    }
+  }
+
+  // ---------- Render pairs ----------
   function renderPairs({ pairs, leftover }) {
     if (pairs.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No valid pairs.</span>";
@@ -450,7 +532,6 @@
     pairsContainer.appendChild(wrap);
   }
 
-  // ---------- Escape HTML ----------
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, m => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -460,4 +541,5 @@
 
 </body>
 </html>
+
 
