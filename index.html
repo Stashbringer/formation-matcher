@@ -290,7 +290,7 @@
 
   let db, formationsRef, pairsRef;
   const formations = [];
-  let pairsFromDb = []; // sist lagrede par
+  let pairsFromDb = []; // last saved pairs
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
 
   const playerInput = document.getElementById("playerName");
@@ -320,7 +320,6 @@
           formations.push({ id: doc.id, ...doc.data() });
         });
         renderList();
-        // Når formations oppdateres, og vi har lagrede par, re-render vi parene med riktig leftover
         if (pairsFromDb.length > 0) {
           renderPairs(buildPairsResultFromDb());
         }
@@ -352,7 +351,8 @@
               formation: d.bFormation,
               power: d.bPower
             },
-            diff: d.diff
+            diff: d.diff,
+            total: d.total ?? (d.aPower + d.bPower)
           });
         });
 
@@ -375,7 +375,6 @@
     );
   }
 
-  // ---------- Bygg result-objekt fra par i DB + lokale formations ----------
   function buildPairsResultFromDb() {
     const usedIds = new Set();
     pairsFromDb.forEach(p => {
@@ -481,7 +480,7 @@
     }
   }
 
-  // ---------- Pairing-logikk ----------
+  // ---------- Pairing-logikk (med total og sortering høyest først) ----------
   function generatePairs() {
     const list = [...formations].sort((a, b) => a.power - b.power);
     const used = new Set();
@@ -508,13 +507,17 @@
       }
 
       if (best) {
+        const total = A.power + best.power;
+        pairs.push({ a: A, b: best, diff: diff, total: total });
         used.add(A.id);
         used.add(best.id);
-        pairs.push({ a: A, b: best, diff });
       } else {
         leftover.push(A);
       }
     }
+
+    // Sorter par: høyest total power øverst
+    pairs.sort((p1, p2) => p2.total - p1.total);
 
     return { pairs, leftover };
   }
@@ -540,6 +543,7 @@
           bFormation: p.b.formation,
           bPower: p.b.power,
           diff: p.diff,
+          total: p.total,
           createdAt: firebase.firestore.FieldValue.serverTimestamp()
         });
       });
@@ -569,7 +573,7 @@
       const card = document.createElement("div");
       card.className = "pair-card";
       card.innerHTML = `
-        <strong>Pair ${i + 1}</strong> — Diff: ${p.diff}<br><br>
+        <strong>Pair ${i + 1}</strong> — Total: ${p.total} | Diff: ${p.diff}<br><br>
         <span class="chip">${escapeHtml(p.a.player)}</span> — ${escapeHtml(p.a.formation)} (${p.a.power})<br>
         <span class="chip">${escapeHtml(p.b.player)}</span> — ${escapeHtml(p.b.formation)} (${p.b.power})
       `;
