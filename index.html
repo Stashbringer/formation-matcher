@@ -233,6 +233,22 @@
       color: #facc15;
     }
 
+    /* Top 3 highlight */
+    .gold-glow {
+      color: #facc15 !important;
+      text-shadow:
+        0 0 6px rgba(250, 204, 21, 0.7),
+        0 0 14px rgba(250, 204, 21, 0.5),
+        0 0 22px rgba(250, 204, 21, 0.3);
+      animation: goldPulse 2.4s infinite ease-in-out;
+    }
+
+    @keyframes goldPulse {
+      0% { opacity: 1; text-shadow: 0 0 6px rgba(250, 204, 21, 0.7); }
+      50% { opacity: 0.75; text-shadow: 0 0 14px rgba(250, 204, 21, 1); }
+      100% { opacity: 1; text-shadow: 0 0 6px rgba(250, 204, 21, 0.7); }
+    }
+
     .status-bar {
       font-size: 0.75rem;
       color: #9ca3af;
@@ -781,7 +797,7 @@
     }
   }
 
-  // ---------- Render pairs (kompakte kort) ----------
+  // ---------- Render pairs (kompakte kort, topp 3 i gull) ----------
   function renderPairs({ pairs, leftover }) {
     if (!pairs || pairs.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No valid pairs.</span>";
@@ -792,21 +808,24 @@
     wrap.className = "pairs";
 
     pairs.forEach((p, i) => {
+      const isTop3 = i < 3;
+      const goldClass = isTop3 ? "gold-glow" : "";
+
       const card = document.createElement("div");
       card.className = "pair-card";
       card.innerHTML = `
         <div class="pair-header">
-          <span class="pair-title">Pair ${i + 1}</span>
+          <span class="pair-title ${goldClass}">Pair ${i + 1}</span>
           <span class="pair-meta">Total: ${p.total} | Diff: ${p.diff}</span>
         </div>
         <div class="pair-row">
-          <span class="pair-name">${escapeHtml(p.a.player)}</span>
+          <span class="pair-name ${goldClass}">${escapeHtml(p.a.player)}</span>
           <span class="pair-sep">—</span>
           <span class="pair-form">${escapeHtml(p.a.formation)}</span>
           <span class="pair-power">(${p.a.power})</span>
         </div>
         <div class="pair-row">
-          <span class="pair-name">${escapeHtml(p.b.player)}</span>
+          <span class="pair-name ${goldClass}">${escapeHtml(p.b.player)}</span>
           <span class="pair-sep">—</span>
           <span class="pair-form">${escapeHtml(p.b.formation)}</span>
           <span class="pair-power">(${p.b.power})</span>
