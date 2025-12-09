@@ -5,6 +5,10 @@
   <title>Formation Matcher – Lost Souls</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore-compat.js"></script>
+
   <style>
     * { box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body {
@@ -263,11 +267,23 @@
   </div>
 
 <script>
-  const formations = [];
+  // ---------- Firebase config (DIN KONFIG) ----------
+  const firebaseConfig = {
+    apiKey: "AIzaSyDjK7eKaCvB0Yz3ITqvfhxS7EeCdR0_Ejk",
+    authDomain: "tides-matcher.firebaseapp.com",
+    projectId: "tides-matcher",
+    storageBucket: "tides-matcher.firebasestorage.app",
+    messagingSenderId: "783442473196",
+    appId: "1:783442473196:web:715f21a86293d9bc7e35c9",
+    measurementId: "G-MBN8G0FSFJ"
+  };
 
-  function uid() {
-    return "id" + Math.random().toString(36).slice(2);
-  }
+  // ---------- Init Firebase + Firestore ----------
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const formationsRef = db.collection("formations"); // kolleksjon i Firestore
+
+  const formations = []; // lokal cache
 
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
 
@@ -278,54 +294,84 @@
   const pairsContainer = document.getElementById("pairsContainer");
   const countInfo = document.getElementById("countInfo");
 
-  document.getElementById("addFormationBtn").onclick = () => {
+  // ---------- Live oppdateringer fra Firestore ----------
+  formationsRef.orderBy("power").onSnapshot(snapshot => {
+    formations.length = 0;
+    snapshot.forEach(doc => {
+      formations.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    render();
+  });
+
+  // ---------- Legg til formasjon (lagres i Firestore) ----------
+  document.getElementById("addFormationBtn").onclick = async () => {
     const player = playerInput.value.trim();
     const form = formationInput.value.trim();
-    const power = Number(powerInput.value.trim());
+    const powerVal = powerInput.value.trim();
 
-    if (!player || !form || isNaN(power)) return alert("Fill all fields correctly.");
+    if (!player || !form || !powerVal) {
+      alert("Fill all fields correctly.");
+      return;
+    }
 
-    formations.push({ id: uid(), player, formation: form, power });
+    const power = Number(powerVal);
+    if (isNaN(power)) {
+      alert("Power must be a number.");
+      return;
+    }
+
+    await formationsRef.add({ player, formation: form, power });
 
     playerInput.value = "";
     formationInput.value = "";
     powerInput.value = "";
-
-    render();
   };
 
-  document.getElementById("clearAllBtn").onclick = () => {
+  // ---------- Clear all (tømmer Firestore) ----------
+  document.getElementById("clearAllBtn").onclick = async () => {
     const given = prompt("Admin code:");
-    if (given !== ADMIN_CODE) return alert("Incorrect code.");
-    if (!confirm("Delete everything?")) return;
-    formations.length = 0;
-    render();
+    if (given !== ADMIN_CODE) {
+      alert("Incorrect code.");
+      return;
+    }
+    if (!confirm("Delete EVERYTHING from the shared list?")) return;
+
+    const snap = await formationsRef.get();
+    const batch = db.batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
   };
 
+  // ---------- Generer par basert på Firestore-data ----------
   document.getElementById("makePairsBtn").onclick = () => {
-    if (formations.length < 2) return alert("Need at least 2 formations.");
+    if (formations.length < 2) {
+      alert("Need at least 2 formations.");
+      return;
+    }
     renderPairs(generatePairs());
   };
 
+  // ---------- Render liste ----------
   function render() {
     formationsBody.innerHTML = "";
     formations.forEach((f, i) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${i + 1}</td>
-        <td>${escape(f.player)}</td>
-        <td>${escape(f.formation)}</td>
+        <td>${escapeHtml(f.player)}</td>
+        <td>${escapeHtml(f.formation)}</td>
         <td>${f.power}</td>
         <td><button class="btn-danger" data-id="${f.id}">✕</button></td>`;
       formationsBody.appendChild(tr);
     });
 
     document.querySelectorAll("[data-id]").forEach(btn => {
-      btn.onclick = () => {
+      btn.onclick = async () => {
         const id = btn.getAttribute("data-id");
-        const index = formations.findIndex(x => x.id === id);
-        if (index !== -1) formations.splice(index, 1);
-        render();
+        await formationsRef.doc(id).delete();
       };
     });
 
@@ -333,6 +379,7 @@
     pairsContainer.innerHTML = "<span class='muted'>No pairs yet.</span>";
   }
 
+  // ---------- Matching-logikk (ikke samme spiller mot seg selv) ----------
   function generatePairs() {
     const list = [...formations].sort((a, b) => a.power - b.power);
     const used = new Set();
@@ -370,6 +417,7 @@
     return { pairs, leftover };
   }
 
+  // ---------- Render par ----------
   function renderPairs({ pairs, leftover }) {
     if (pairs.length === 0) {
       pairsContainer.innerHTML = "<span class='muted'>No valid pairs.</span>";
@@ -384,8 +432,8 @@
       card.className = "pair-card";
       card.innerHTML = `
         <strong>Pair ${i + 1}</strong> — Diff: ${p.diff}<br><br>
-        <span class="chip">${escape(p.a.player)}</span> — ${escape(p.a.formation)} (${p.a.power})<br>
-        <span class="chip">${escape(p.b.player)}</span> — ${escape(p.b.formation)} (${p.b.power})
+        <span class="chip">${escapeHtml(p.a.player)}</span> — ${escapeHtml(p.a.formation)} (${p.a.power})<br>
+        <span class="chip">${escapeHtml(p.b.player)}</span> — ${escapeHtml(p.b.formation)} (${p.b.power})
       `;
       wrap.appendChild(card);
     });
@@ -394,7 +442,7 @@
       const miss = document.createElement("div");
       miss.style.marginTop = "1rem";
       miss.innerHTML = "<strong>Unpaired:</strong><br>" +
-        leftover.map(f => `${escape(f.player)} — ${escape(f.formation)} (${f.power})`).join("<br>");
+        leftover.map(f => `${escapeHtml(f.player)} — ${escapeHtml(f.formation)} (${f.power})`).join("<br>");
       wrap.appendChild(miss);
     }
 
@@ -402,8 +450,9 @@
     pairsContainer.appendChild(wrap);
   }
 
-  function escape(s) {
-    return s.replace(/[&<>"']/g, m => ({
+  // ---------- Escape HTML ----------
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, m => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     }[m]));
   }
@@ -411,3 +460,4 @@
 
 </body>
 </html>
+
