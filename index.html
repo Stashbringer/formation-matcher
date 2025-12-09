@@ -328,12 +328,11 @@
           <label>Formation (1–4)</label>
           <input
             id="formationName"
-            type="number"
-            min="1"
-            max="4"
-            step="1"
+            type="text"
+            maxlength="1"
             inputmode="numeric"
-            placeholder="Formation 1/2/3"
+            pattern="[1-4]"
+            placeholder="Formation number"
           />
         </div>
         <div>
@@ -607,9 +606,9 @@
       return;
     }
 
-    // Kun 1–4 tillatt
+    // Only allow exactly 1, 2, 3 or 4
     if (!/^[1-4]$/.test(formRaw)) {
-      alert("Formation must be a number between 1 and 4.");
+      alert("Formation must be a single number between 1 and 4.");
       return;
     }
 
@@ -619,7 +618,7 @@
       return;
     }
 
-    const form = formRaw; // lagres som string "1"–"4"
+    const form = formRaw; // store as "1"–"4"
 
     try {
       await formationsRef.add({ player, formation: form, power });
@@ -855,6 +854,7 @@
 
 </body>
 </html>
+
 
 
 
