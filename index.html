@@ -411,6 +411,10 @@
   const ADMIN_UID = "I51aLQJZMjO960ykC2AUlNOVbIE3";
   const ADMIN_CODE = "ZOMBIE-ADMIN-2025";
 
+  // Event admin code for Generate Pairs
+  const EVENT_ADMIN_CODE = "EVENT-ADMIN-2025";
+  let eventAdminUnlocked = false;
+
   const playerInput = document.getElementById("playerName");
   const formationInput = document.getElementById("formationName");
   const powerInput = document.getElementById("power");
@@ -643,7 +647,7 @@
     }
   };
 
-  // ---------- Clear all ----------
+  // ---------- Clear all (fortsatt kun admin) ----------
   document.getElementById("clearAllBtn").onclick = async () => {
     if (!formationsRef || !pairsRef) {
       alert("Database not connected.");
@@ -672,23 +676,30 @@
     }
   };
 
-  // ---------- Generate & save pairs ----------
+  // ---------- Generate & save pairs (Event admin code required) ----------
   document.getElementById("makePairsBtn").onclick = async () => {
     if (formations.length < 2) {
       alert("Need at least 2 formations.");
       return;
     }
+
+    if (!eventAdminUnlocked) {
+      const given = prompt("Event admin code:");
+      if (given !== EVENT_ADMIN_CODE) {
+        alert("Incorrect event admin code.");
+        return;
+      }
+      eventAdminUnlocked = true;
+    }
+
     const result = generatePairs();
     setPairsResult(result);
 
-    if (isAdmin) {
-      await savePairsToDb(result);
-    } else {
-      statusEl.textContent = "Pairs generated locally (not saved, admin only).";
-      setTimeout(() => {
-        statusEl.textContent = "Connected to database.";
-      }, 4000);
-    }
+    await savePairsToDb(result);
+    statusEl.textContent = "Pairs saved to database.";
+    setTimeout(() => {
+      statusEl.textContent = "Connected to database.";
+    }, 3000);
   };
 
   // ---------- Render formations-liste ----------
@@ -798,10 +809,6 @@
       });
 
       await batch.commit();
-      statusEl.textContent = "Pairs saved to database (admin).";
-      setTimeout(() => {
-        statusEl.textContent = "Connected to database.";
-      }, 3000);
     } catch (e) {
       console.error("Save pairs error:", e);
       alert("Failed to save pairs: " + e.message);
@@ -866,6 +873,7 @@
 
 </body>
 </html>
+
 
 
 
