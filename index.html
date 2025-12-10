@@ -288,6 +288,24 @@
       padding: 0.25rem 0.5rem;
       border-radius: 999px;
     }
+
+    /* Admin remove player section */
+    #adminRemoveSection {
+      display: none;
+      margin-top: 0.5rem;
+      gap: 0.4rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    #adminRemoveSearch {
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.6rem;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #f9fafb;
+      font-size: 0.78rem;
+      width: 190px;
+    }
   </style>
 </head>
 
@@ -355,7 +373,13 @@
         <button class="btn-primary" id="makePairsBtn">⚔ Generate Pairs</button>
       </div>
 
-      <div class="table-wrapper">
+      <!-- Admin / event-admin remove player -->
+      <div id="adminRemoveSection">
+        <input id="adminRemoveSearch" placeholder="Search player to remove..." />
+        <button class="btn-danger btn-xs" id="removePlayerBtn">Remove Player</button>
+      </div>
+
+      <div class="table-wrapper" style="margin-top:0.5rem;">
         <table>
           <thead>
             <tr>
@@ -390,6 +414,9 @@
   const adminLoginBtn = document.getElementById("adminLoginBtn");
   const adminLogoutBtn = document.getElementById("adminLogoutBtn");
   const pairSearchInput = document.getElementById("pairSearch");
+  const adminRemoveSection = document.getElementById("adminRemoveSection");
+  const adminRemoveSearch = document.getElementById("adminRemoveSearch");
+  const removePlayerBtn = document.getElementById("removePlayerBtn");
 
   // ---------- Firebase config ----------
   const firebaseConfig = {
@@ -434,6 +461,15 @@
     statusEl.textContent = "Error: could not connect to database.";
   }
 
+  function updateAdminUI() {
+    if (!adminRemoveSection) return;
+    if (isAdmin || eventAdminUnlocked) {
+      adminRemoveSection.style.display = "flex";
+    } else {
+      adminRemoveSection.style.display = "none";
+    }
+  }
+
   // ---------- Skjult admin-unlock: dobbeltklikk på status-linje ----------
   statusEl.addEventListener("dblclick", () => {
     const code = prompt("Admin code:");
@@ -463,6 +499,7 @@
         adminStatusText.textContent = "Not logged in";
         adminLogoutBtn.style.display = "none";
       }
+      updateAdminUI();
       renderList();
       if (currentPairsResult) {
         renderPairsFiltered();
@@ -690,6 +727,7 @@
         return;
       }
       eventAdminUnlocked = true;
+      updateAdminUI();
     }
 
     const result = generatePairs();
@@ -701,6 +739,81 @@
       statusEl.textContent = "Connected to database.";
     }, 3000);
   };
+
+  // ---------- Remove player (admin or event admin) ----------
+  if (removePlayerBtn) {
+    removePlayerBtn.onclick = async () => {
+      if (!formationsRef || !pairsRef) {
+        alert("Database not connected.");
+        return;
+      }
+      if (!isAdmin && !eventAdminUnlocked) {
+        alert("Only admin or event admin can remove players.");
+        return;
+      }
+
+      const name = adminRemoveSearch.value.trim();
+      if (!name) {
+        alert("Enter a player name.");
+        return;
+      }
+
+      const nameLower = name.toLowerCase();
+      if (!confirm("Remove ALL formations and pairs containing: " + name + "?")) return;
+
+      try {
+        const batch = db.batch();
+        let removedSomething = false;
+
+        // Remove formations for this player
+        const formsSnap = await formationsRef.get();
+        formsSnap.forEach(doc => {
+          const d = doc.data();
+          if ((d.player || "").toLowerCase() === nameLower) {
+            batch.delete(doc.ref);
+            removedSomething = true;
+          }
+        });
+
+        // Remove pairs where this player appears
+        const pairsSnap = await pairsRef.get();
+        pairsSnap.forEach(doc => {
+          const d = doc.data();
+          const aName = (d.aPlayer || "").toLowerCase();
+          const bName = (d.bPlayer || "").toLowerCase();
+          if (aName === nameLower || bName === nameLower) {
+            batch.delete(doc.ref);
+            removedSomething = true;
+          }
+        });
+
+        if (!removedSomething) {
+          alert("Player not found in formations or pairs.");
+          return;
+        }
+
+        await batch.commit();
+
+        // Also clean local formations array before re-generating
+        for (let i = formations.length - 1; i >= 0; i--) {
+          if ((formations[i].player || "").toLowerCase() === nameLower) {
+            formations.splice(i, 1);
+          }
+        }
+
+        // Regenerate pairs based on updated formations
+        const newResult = generatePairs();
+        await savePairsToDb(newResult);
+        setPairsResult(newResult);
+
+        adminRemoveSearch.value = "";
+        alert("Player removed and pairs updated.");
+      } catch (e) {
+        console.error("Remove player error:", e);
+        alert("Failed to remove player: " + e.message);
+      }
+    };
+  }
 
   // ---------- Render formations-liste ----------
   function renderList() {
@@ -869,6 +982,9 @@
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
     }[m]));
   }
+
+  // initial admin UI state
+  updateAdminUI();
 </script>
 
 </body>
